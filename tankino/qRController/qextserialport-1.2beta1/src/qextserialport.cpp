@@ -505,11 +505,8 @@ QextSerialPort::QextSerialPort(const QString & name, const PortSettings& setting
 bool QextSerialPort::open(OpenMode mode)
 {
     Q_D(QextSerialPort);
-printf("%s-%d\n", __func__, __LINE__);
     QWriteLocker locker(&d->lock);
-printf("%s-%d\n", __func__, __LINE__);
     if (mode != QIODevice::NotOpen && !isOpen()) {
-printf("%s-%d\n", __func__, __LINE__);
         d->open_sys(mode);
     }
 

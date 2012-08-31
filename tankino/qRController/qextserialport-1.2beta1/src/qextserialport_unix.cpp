@@ -57,12 +57,9 @@ void QextSerialPortPrivate::platformSpecificDestruct()
 
 bool QextSerialPortPrivate::open_sys(QIODevice::OpenMode mode)
 {
-printf("%s-%d\n", __func__, __LINE__);
     Q_Q(QextSerialPort);
     //note: linux 2.6.21 seems to ignore O_NDELAY flag
-printf("%s-%d\n", __func__, __LINE__);
     if ((fd = ::open(port.toAscii() ,O_RDWR | O_NOCTTY | O_NDELAY)) != -1) {
-printf("%s-%d\n", __func__, __LINE__);
         /*In the Private class, We can not call QIODevice::open()*/
         q->setOpenMode(mode);             // Flag the port as opened
         ::tcgetattr(fd, &old_termios);    // Save the old termios
@@ -94,8 +91,6 @@ printf("%s-%d\n", __func__, __LINE__);
         }
         return true;
     } else {
-perror("serial");
-printf("%s-%d: error %d\n", __func__, __LINE__, errno);
         translateError(errno);
         return false;
     }
