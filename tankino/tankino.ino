@@ -27,14 +27,14 @@ int speed = 0;
 /* lights */
 long previousTLMillis = 0;
 int tLState = LOW;
-int tDir;
+int tDir = -1;
 int dLState = LOW;
 
 /* ArduMoto methods */
 
 void turningLight(int dir)
 {
-  if (tDir >= 0 && millis() - previousTLMillis > 300) {
+  if ((tDir >= 0) && (millis() - previousTLMillis > 300)) {
     previousTLMillis = millis();
     if (tLState == LOW)
       tLState = HIGH;
