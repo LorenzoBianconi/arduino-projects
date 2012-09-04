@@ -15,10 +15,12 @@ const int pwmB = 11;
 const int dirA = 12;
 const int dirB = 13;
 /* light pin maps */
-const int sL = 7;
+const int sL = A3;
 const int dL = 8;
-const int tlL = 9;
-const int trL = 10;
+const int tlfL = 6;
+const int trfL = A0;
+const int tlbL = A5;
+const int trbL = 10;
 
 /* motor direction and speed */
 int direction = 'F';
@@ -27,20 +29,26 @@ int speed = 0;
 /* lights */
 long previousTLMillis = 0;
 int tLState = LOW;
-int tDir = -1;
 int dLState = LOW;
 
 /* ArduMoto methods */
 
-void turningLight(int dir)
+void turningLight()
 {
-  if ((tDir >= 0) && (millis() - previousTLMillis > 300)) {
+  if ((direction == 'L' || direction == 'R') &&
+      (millis() - previousTLMillis > 300)) {
     previousTLMillis = millis();
     if (tLState == LOW)
       tLState = HIGH;
     else
       tLState = LOW;
-    digitalWrite(dir, tLState);
+    if (direction == 'L') {  
+      digitalWrite(tlfL, tLState);
+      digitalWrite(tlbL, tLState);
+    } else {
+      digitalWrite(trfL, tLState);
+      digitalWrite(trbL, tLState);
+    }
   }
 }
 
@@ -56,12 +64,10 @@ void setdirection(int d)
     digitalWrite(dirB, HIGH);
     break;
   case 'L':
-    tDir = tlL;
     digitalWrite(dirA, HIGH);
     digitalWrite(dirB, LOW);
     break;
   case 'R':
-    tDir = trL;
     digitalWrite(dirA, LOW);
     digitalWrite(dirB, HIGH);
     break;
@@ -72,9 +78,10 @@ void setspeed(int s)
 {
   if (s == 0) {
     digitalWrite(sL, HIGH);
-    tDir =-1;
-    digitalWrite(tlL, LOW);
-    digitalWrite(trL, LOW);
+    digitalWrite(tlfL, LOW);
+    digitalWrite(trfL, LOW);
+    digitalWrite(tlbL, LOW);
+    digitalWrite(trbL, LOW);
   } else
     digitalWrite(sL, LOW);
   analogWrite(pwmA, s);
@@ -114,8 +121,10 @@ void setup()
   pinMode(dirB, OUTPUT);
   pinMode(sL, OUTPUT);
   pinMode(dL, OUTPUT);
-  pinMode(tlL, OUTPUT);
-  pinMode(trL, OUTPUT);
+  pinMode(tlfL, OUTPUT);
+  pinMode(trfL, OUTPUT);
+  pinMode(tlbL, OUTPUT);
+  pinMode(trbL, OUTPUT);
   
   /* initialize direction and speed */
   digitalWrite(dirA, LOW);
@@ -125,8 +134,11 @@ void setup()
   /* initialize lights */
   digitalWrite(sL, HIGH);
   digitalWrite(dL, LOW);
-  digitalWrite(tlL, LOW);
-  digitalWrite(trL, LOW);
+  digitalWrite(tlfL, LOW);
+  digitalWrite(trfL, LOW);
+  digitalWrite(tlbL, LOW);
+  digitalWrite(trbL, LOW);
+
 }
 
 void loop()
@@ -147,7 +159,7 @@ void loop()
     else
       direction = r;
   }
-  turningLight(tDir);
+  turningLight();
   delay(10);
 }
 
