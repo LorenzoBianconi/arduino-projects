@@ -51,8 +51,8 @@ long measurementTime = 0;
 /*
  * pachube definitions
  */
-#define FEEDID  43139
-#define APIKEY "maJXtfoiybdd454ddV2ZCCrgXrPo9EAUdJ1FVn4uwOeZI66nPl56ZzlbchDmGJ2TOT5DbcBLmr8fAY4V2rb-pT-TSpxOOmvDl7kUZ7t4aANwTXVXnwnn6vaXLRXUOq8H"
+#define FEEDID  <your feed-id>
+#define APIKEY "<your api-key>"
 /*
  * network stuffs
  */
