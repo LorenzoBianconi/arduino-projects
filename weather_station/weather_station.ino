@@ -59,7 +59,7 @@ long measurementTime = 0;
 byte mac[] = { 0x90, 0xA2, 0xDA, 0x00, 0xE7, 0x7C };
 byte ip[] = { 192, 168, 20, 70 };
 byte gw[] = { 192, 168, 20, 254 };
-byte dns[] = { 8, 8, 8, 8 };
+byte dns_server[] = { 8, 8, 8, 8 };
 byte subnet[] = { 255, 255, 255, 0 };
 
 bool reset;
@@ -324,7 +324,7 @@ void setup() {
   wdt_enable(WDTO_8S);
   reset = false;  
   
-  Ethernet.begin(mac, ip, dns, gw, subnet);
+  Ethernet.begin(mac, ip, dns_server, gw, subnet);
   
   SPI.begin();
   pinMode(MPL115A1_SELECT_PIN, OUTPUT);
