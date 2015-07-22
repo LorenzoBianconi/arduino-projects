@@ -76,23 +76,14 @@ void loop()
     conncted = false;
     reset_bt_link();
   } else {
-    char cmd;
-
+    char cmd = Serial.read();
     conncted = bt_link;
-    cmd = Serial.read();  
     if (cmd == 't') {
-      char temp;
-      
       cur_temp = get_temp_lm335a();
-      temp = cur_temp;
-      Serial.print(temp);
-      Serial.flush();
+      Serial.println(cur_temp);
     } else if (cmd == 'h') {
-      char rh;
-
-      rh = get_rh_HIH4030(cur_temp);
-      Serial.print(rh);
-      Serial.flush();
+      float rh = get_rh_HIH4030(cur_temp);
+      Serial.println(rh);
     }
   }
   delay(100);
