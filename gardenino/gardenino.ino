@@ -19,10 +19,10 @@ static int relayValue[] = { LOW, LOW, LOW, LOW };
 #define LOOP_DELAY      1000
 
 struct timeSlot {
-        int h_start;
-        int m_start;
-        int h_stop;
-        int m_stop;
+        int hStart;
+        int mStart;
+        int hStop;
+        int mStop;
 };
 
 #define TIMESLOT_MAP_MAXDEPTH      10
@@ -81,10 +81,10 @@ void setRelay(int index, int hTime, int sTime) {
         int val = LOW;
 
         for (int i = 0; i < gadenTimeTable[index].len; i++) {
-                if (hTime >= gadenTimeTable[index].tsList[i].h_start &&
-                    sTime >= gadenTimeTable[index].tsList[i].m_start &&
-                    hTime <= gadenTimeTable[index].tsList[i].h_stop &&
-                    sTime >= gadenTimeTable[index].tsList[i].m_stop)
+                if (hTime >= gadenTimeTable[index].tsList[i].hStart &&
+                    sTime >= gadenTimeTable[index].tsList[i].mStart &&
+                    hTime <= gadenTimeTable[index].tsList[i].hStop &&
+                    sTime >= gadenTimeTable[index].tsList[i].mStop)
                         val = HIGH;
         }
         if (val != relayValue[index]) {
