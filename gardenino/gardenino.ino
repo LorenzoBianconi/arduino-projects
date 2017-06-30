@@ -14,8 +14,6 @@
 const static int relayMap[] = { 4, 5, 6, 7 };
 static int relayValue[] = { LOW, LOW, LOW, LOW };
 #define RELAY_DEPTH     4
-#define RELAY_MASK      0xf
-
 #define LOOP_DELAY      500
 
 struct timeSlot {
@@ -27,51 +25,34 @@ struct timeSlot {
 };
 
 #define TIMESLOT_MAP_MAXDEPTH      4
-struct timeTableElem {
-          struct timeSlot tsList[TIMESLOT_MAP_MAXDEPTH];
-          bool enabled;
-};
-
-const struct timeTableElem gadenTimeTable[] = {
+struct timeSlot gadenTimeTable[][TIMESLOT_MAP_MAXDEPTH] = {
         /* relay D4 */
         {
-                .tsList = {
-                        [0] = { true, 10, 20, 30, 40 },
-                        [1] = { true, 10, 20, 30, 40 },
-                        [2] = { true, 10, 20, 30, 40 },
-                        [3] = { true, 10, 20, 30, 40 },
-                },
-                .enabled = true,
+                [0] = { true, 10, 20, 30, 40 },
+                [1] = { true, 10, 20, 30, 40 },
+                [2] = { true, 10, 20, 3, 40 },
+                [3] = { true, 10, 20, 30, 40 },
         },
         /* relay D5 */
         {
-                 .tsList = {
-                        [0] = { false, 10, 20, 30, 40 },
-                        [1] = { false, 10, 20, 30, 40 },
-                        [2] = { false, 10, 20, 50, 40 },
-                        [3] = { false, 10, 20, 30, 40 },
-                },
-                .enabled = false,
+                [0] = { false, 10, 20, 30, 40 },
+                [1] = { true, 10, 20, 30, 40 },
+                [2] = { true, 10, 20, 50, 40 },
+                [3] = { false, 10, 20, 30, 40 },
         },
         /* relay D6 */
         {
-                 .tsList = {
-                        [0] = { false, 10, 20, 30, 40 },
-                        [1] = { true, 10, 20, 30, 40 },
-                        [2] = { false, 10, 20, 30, 40 },
-                        [3] = { true, 10, 20, 30, 40 },
-                },
-                .enabled = false,
+                [0] = { false, 10, 20, 30, 40 },
+                [1] = { true, 10, 20, 30, 40 },
+                [2] = { false, 10, 20, 30, 40 },
+                [3] = { true, 10, 20, 30, 40 },
         },
         /* relay D7 */
         {
-                 .tsList = {
-                        [0] = { false, 10, 20, 30, 40 },
-                        [1] = { false, 10, 20, 50, 40 },
-                        [2] = { true, 20, 20, 30, 40 },
-                        [3] = { false, 10, 20, 30, 40 },
-                },
-                .enabled = false,
+                [0] = { false, 10, 20, 30, 40 },
+                [1] = { false, 10, 20, 50, 40 },
+                [2] = { true, 20, 20, 30, 40 },
+                [3] = { false, 10, 20, 30, 40 },
         },
 
 };
@@ -91,8 +72,8 @@ void resetBtLink() {
         sendBtCmd("\r\n+STWMOD=0\r\n");
         /* set nick */
         sendBtCmd("\r\n+STNA=gardenino\r\n");
-        sendBtCmd("\r\n+STAUTO=0\r\n");
         /* permit autoconnect to paired device */
+        sendBtCmd("\r\n+STAUTO=0\r\n");
         sendBtCmd("\r\n+STPIN=0000\r\n");
         sendBtCmd("\r\n+INQ=0\r\n");
         delay(2000);
@@ -119,18 +100,20 @@ String getXmlChannelConf(int index) {
         String xml = "";
 
         for (int i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
-                xml += "<time_slot channel=\"";
+                xml += "<ts chan=\"";
                 xml += index;
-                xml += "\" channel_enabled=\"";
-                xml += gadenTimeTable[index].enabled;
-                xml += "\" index=\"";
+                xml += "\" idx=\"";
                 xml += i;
-                xml += "\" enabled=\"";
-                xml += gadenTimeTable[index].tsList[i].enabled;
-                xml += "\" start_time=\"";
-                xml += gadenTimeTable[index].tsList[i].hStart;
-                xml += "\" stop_time=\"";
-                xml += gadenTimeTable[index].tsList[i].hStop;
+                xml += "\" en=\"";
+                xml += gadenTimeTable[index][i].enabled;
+                xml += "\" bt=\"";
+                xml += gadenTimeTable[index][i].hStart;
+                xml += ":";
+                xml += gadenTimeTable[index][i].mStart;
+                xml += "\" et=\"";
+                xml += gadenTimeTable[index][i].hStop;
+                xml += ":";
+                xml += gadenTimeTable[index][i].mStop;
                 xml += "\"/>";
         }
 
@@ -145,14 +128,84 @@ void sendXmlConf() {
         }
 }
 
+int parseTimeSlotXml(String xml) {
+        int sd, td;
+
+        /* channel info */
+        Serial.println(xml);
+        sd = xml.indexOf("\"");
+        if (sd < 0)
+                return -1;
+        int chInfo = (xml.substring(sd + 1, sd + 2).toInt() % RELAY_DEPTH);
+        /* index info */
+        sd = xml.indexOf("\"", sd + 3);
+        if (sd < 0)
+                return -1;
+        int indexInfo = (xml.substring(sd + 1, sd + 2).toInt() % TIMESLOT_MAP_MAXDEPTH);
+        /* enable info */
+        sd = xml.indexOf("\"", sd + 3);
+        if (sd < 0)
+                return -1;
+        int enableInfo = xml.substring(sd + 1, sd + 2).toInt();
+        /* start_time info */
+        sd = xml.indexOf("\"", sd + 3);
+        if (sd < 0)
+                return -1;
+        String startInfo = xml.substring(sd + 1, sd + 6);
+        td = startInfo.indexOf(":");
+        if (td < 0)
+                return -1;
+        int hStart = startInfo.substring(0, td).toInt();
+        int mStart = startInfo.substring(td + 1).toInt();
+        /* stop_time info */
+        sd = xml.indexOf("\"", sd + 7);
+        if (sd < 0)
+                return -1;
+        String stopInfo = xml.substring(sd + 1, sd + 6);
+        td = startInfo.indexOf(":");
+        if (td < 0)
+                return -1;
+        int hStop = stopInfo.substring(0, td).toInt();
+        int mStop = stopInfo.substring(td + 1).toInt();
+
+        /* update timetable */
+        gadenTimeTable[chInfo][indexInfo].enabled = enableInfo;
+        gadenTimeTable[chInfo][indexInfo].hStart = hStart;
+        gadenTimeTable[chInfo][indexInfo].mStart = mStart;
+        gadenTimeTable[chInfo][indexInfo].hStop = hStop;
+        gadenTimeTable[chInfo][indexInfo].mStop = mStop;
+}
+
+void parseRxBuffer(String data) {
+        if (data.startsWith("<SET")) {
+                int i = 0, closeTag;
+
+                while (i < data.length()) {
+                    closeTag = data.indexOf("/>", i) + 2;
+                    if (closeTag < 0)
+                        break;
+
+                    int err = parseTimeSlotXml(data.substring(i + 5, closeTag));
+                    if (err < 0)
+                        break;
+                    i = closeTag;
+                }
+        } else if (data.startsWith("<GET>")) {
+                sendXmlConf();
+        }
+}
+
 void setRelay(int index, int hTime, int sTime) {
         int val = LOW;
 
         for (int i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
-                if (hTime >= gadenTimeTable[index].tsList[i].hStart &&
-                    sTime >= gadenTimeTable[index].tsList[i].mStart &&
-                    hTime <= gadenTimeTable[index].tsList[i].hStop &&
-                    sTime >= gadenTimeTable[index].tsList[i].mStop)
+                if (!gadenTimeTable[index][i].enabled)
+                        continue;
+
+                if (hTime >= gadenTimeTable[index][i].hStart &&
+                    sTime >= gadenTimeTable[index][i].mStart &&
+                    hTime <= gadenTimeTable[index][i].hStop &&
+                    sTime >= gadenTimeTable[index][i].mStop)
                         val = HIGH;
         }
         if (val != relayValue[index]) {
@@ -165,22 +218,19 @@ void loop() {
         bool btLink = digitalRead(BT_LINK_PIN);
 
         if (!btLink && btConnected) {
-                btConnected = false;
+                delay(1000);
                 resetBtLink();
-        } else {
-                btConnected = btLink;
         }
+        btConnected = btLink;
 
-        if (btConnected) {
+       if (btConnected) {
                 String data = Serial.readString();
-                if (data == "GET")
-                        sendXmlConf();
+                parseRxBuffer(data);
+                Serial.println(data);
         }
 
-        for (int i = 0; i < RELAY_DEPTH; i++) {
-                if (!gadenTimeTable[i].enabled)
-                        continue;
+        for (int i = 0; i < RELAY_DEPTH; i++)
                 setRelay(i, millis() / 1000, millis() % 1000);
-        }
+
         delay(LOOP_DELAY);
 }
