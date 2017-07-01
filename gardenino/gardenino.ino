@@ -1,8 +1,16 @@
+#include <Wire.h>
+#include <RTClib.h>
+
 /*
  * gardenino - automatic irrigation system
  * me@lorenzobianconi.net
  *
  */
+
+/*
+ * Haljia RTC logger
+ */
+RTC_DS1307 rtc;
 
 /*
  * makerstudio relay shiled v1.1 (www.makerstudio.cc)
@@ -24,41 +32,11 @@ struct timeSlot {
         int mStop;
 };
 
-#define TIMESLOT_MAP_MAXDEPTH      4
-struct timeSlot gadenTimeTable[][TIMESLOT_MAP_MAXDEPTH] = {
-        /* relay D4 */
-        {
-                [0] = { true, 10, 20, 30, 40 },
-                [1] = { true, 10, 20, 30, 40 },
-                [2] = { true, 10, 20, 3, 40 },
-                [3] = { true, 10, 20, 30, 40 },
-        },
-        /* relay D5 */
-        {
-                [0] = { false, 10, 20, 30, 40 },
-                [1] = { true, 10, 20, 30, 40 },
-                [2] = { true, 10, 20, 50, 40 },
-                [3] = { false, 10, 20, 30, 40 },
-        },
-        /* relay D6 */
-        {
-                [0] = { false, 10, 20, 30, 40 },
-                [1] = { true, 10, 20, 30, 40 },
-                [2] = { false, 10, 20, 30, 40 },
-                [3] = { true, 10, 20, 30, 40 },
-        },
-        /* relay D7 */
-        {
-                [0] = { false, 10, 20, 30, 40 },
-                [1] = { false, 10, 20, 50, 40 },
-                [2] = { true, 20, 20, 30, 40 },
-                [3] = { false, 10, 20, 30, 40 },
-        },
-
-};
+#define TIMESLOT_MAP_MAXDEPTH      6
+struct timeSlot gadenTimeTable[RELAY_DEPTH][TIMESLOT_MAP_MAXDEPTH] = {};
 
 /* Bluetooth stuff */
-#define BT_LINK_PIN     A5
+#define BT_LINK_PIN     A0
 bool btConnected;
 
 void sendBtCmd(char *cmd)
@@ -88,6 +66,12 @@ void setup() {
         for (int i = 0; i < RELAY_DEPTH; i++) {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
+        }
+
+        Wire.begin();
+        rtc.begin();
+        if (!rtc.isrunning()) {
+                rtc.adjust(DateTime(__DATE__, __TIME__));
         }
 
         /* init bt connection */
@@ -132,7 +116,6 @@ int parseTimeSlotXml(String xml) {
         int sd, td;
 
         /* channel info */
-        Serial.println(xml);
         sd = xml.indexOf("\"");
         if (sd < 0)
                 return -1;
@@ -176,6 +159,52 @@ int parseTimeSlotXml(String xml) {
         gadenTimeTable[chInfo][indexInfo].mStop = mStop;
 }
 
+int updateRtcTime(String xml) {
+        int sd;
+
+        sd = xml.indexOf("/>");
+        if (sd < 0)
+                return -1;
+
+        sd = xml.indexOf("\"");
+        if (sd < 0)
+                return -1;
+
+        String currDate = xml.substring(sd + 1, sd + 11);
+        String currDay = currDate.substring(0, 2);
+        String currMonth = currDate.substring(3, 5);
+        String currYear = currDate.substring(6, 10);
+
+        sd = xml.indexOf(" ", sd + 1);
+        if (sd < 0)
+                return -1;
+        String currTime = xml.substring(sd + 1, sd + 6);
+        String currHour = currTime.substring(0, 2);
+        String currMin = currTime.substring(3, 5);
+
+        rtc.adjust(DateTime(currYear.toInt(), currMonth.toInt(), currDay.toInt(),
+                            currHour.toInt(), currMin.toInt(), 0));
+}
+
+String getCurrTime() {
+        String currTime = "";
+        DateTime now = rtc.now();
+
+        currTime += String(now.year());
+        currTime += "/";
+        currTime += String(now.month());
+        currTime += "/";
+        currTime += String(now.day());
+        currTime += " ";
+        currTime += String(now.hour());
+        currTime += ":";
+        currTime += String(now.minute());
+        currTime += ":";
+        currTime += String(now.second());
+
+        return currTime;
+}
+
 void parseRxBuffer(String data) {
         if (data.startsWith("<SET")) {
                 int i = 0, closeTag;
@@ -191,6 +220,10 @@ void parseRxBuffer(String data) {
                     i = closeTag;
                 }
         } else if (data.startsWith("<GET>")) {
+                sendXmlConf();
+        } else if (data.startsWith("<TIME")) {
+                updateRtcTime(data);
+                delay(500);
                 sendXmlConf();
         }
 }
@@ -229,8 +262,11 @@ void loop() {
                 Serial.println(data);
         }
 
-        for (int i = 0; i < RELAY_DEPTH; i++)
-                setRelay(i, millis() / 1000, millis() % 1000);
+        if (rtc.isrunning()) {
+                DateTime now = rtc.now();
+                for (int i = 0; i < RELAY_DEPTH; i++)
+                        setRelay(i, now.hour(), now.minute());
+        }
 
         delay(LOOP_DELAY);
 }
