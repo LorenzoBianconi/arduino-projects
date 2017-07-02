@@ -1,3 +1,5 @@
+#include <SPI.h>
+#include <SD.h>
 #include <Wire.h>
 #include <RTClib.h>
 
@@ -19,25 +21,29 @@ RTC_DS1307 rtc;
  * D6: digital pin 6
  * D7: digital pin 7
  */
-const static int relayMap[] = { 4, 5, 6, 7 };
-static int relayValue[] = { LOW, LOW, LOW, LOW };
+const static byte relayMap[] = { 4, 5, 6, 7 };
+static byte relayValue[] = { LOW, LOW, LOW, LOW };
 #define RELAY_DEPTH     4
-#define LOOP_DELAY      500
+#define LOOP_DELAY      1000
 
 struct timeSlot {
-        bool enabled;
-        int hStart;
-        int mStart;
-        int hStop;
-        int mStop;
+        byte enabled;
+        byte hStart;
+        byte mStart;
+        byte hStop;
+        byte mStop;
 };
 
-#define TIMESLOT_MAP_MAXDEPTH      6
-struct timeSlot gadenTimeTable[RELAY_DEPTH][TIMESLOT_MAP_MAXDEPTH] = {};
+#define TIMESLOT_MAP_MAXDEPTH      4
+struct timeSlot gardenTimeTable[RELAY_DEPTH][TIMESLOT_MAP_MAXDEPTH] = {};
 
 /* Bluetooth stuff */
 #define BT_LINK_PIN     A0
-bool btConnected;
+byte btConnected;
+
+/* SD stuff */
+const byte chipSelect = 10;
+#define CONFIG_FILE     "garden.xml"
 
 void sendBtCmd(char *cmd)
 {
@@ -63,7 +69,7 @@ void setup() {
         Serial.begin(38400);
         Serial.setTimeout(500);
 
-        for (int i = 0; i < RELAY_DEPTH; i++) {
+        for (byte i = 0; i < RELAY_DEPTH; i++) {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
         }
@@ -74,92 +80,135 @@ void setup() {
                 rtc.adjust(DateTime(__DATE__, __TIME__));
         }
 
+        if (SD.begin(chipSelect))
+                loadConfiguration();
+
         /* init bt connection */
         btConnected = false;
         delay(1000);
         resetBtLink();
 }
 
-String getXmlChannelConf(int index) {
-        String xml = "";
 
-        for (int i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
-                xml += "<ts chan=\"";
-                xml += index;
-                xml += "\" idx=\"";
-                xml += i;
-                xml += "\" en=\"";
-                xml += gadenTimeTable[index][i].enabled;
-                xml += "\" bt=\"";
-                xml += gadenTimeTable[index][i].hStart;
-                xml += ":";
-                xml += gadenTimeTable[index][i].mStart;
-                xml += "\" et=\"";
-                xml += gadenTimeTable[index][i].hStop;
-                xml += ":";
-                xml += gadenTimeTable[index][i].mStop;
-                xml += "\"/>";
+void saveConfiguration() {
+        SD.remove(CONFIG_FILE);
+        File configFile = SD.open(CONFIG_FILE, FILE_WRITE);
+        if (configFile) {
+                String xml;
+                for (byte i = 0; i < RELAY_DEPTH; i++) {
+                        for (byte j = 0; j < TIMESLOT_MAP_MAXDEPTH; j++) {
+                                xml = getXmlTimeSlotConf(i, j);
+                                configFile.println(xml);
+                        }
+                }
+                configFile.close();
         }
+}
+
+void loadConfiguration() {
+        File configFile = SD.open(CONFIG_FILE);
+        if (configFile) {
+                String timeslot = "";
+                while (configFile.available()) {
+                        char data = configFile.read();
+                        if (data == '\n') {
+                                parseTimeSlotXml(timeslot);
+                                timeslot = "";
+                        } else {
+                                timeslot += String(data);
+                        }
+                }
+                configFile.close();
+        }
+}
+
+String getXmlTimeSlotConf(byte channel, byte timeSlot) {
+        String xml = "<ts chan=\"";
+        xml += channel;
+        xml += "\" idx=\"";
+        xml += timeSlot;
+        xml += "\" en=\"";
+        xml += gardenTimeTable[channel][timeSlot].enabled;
+        xml += "\" bt=\"";
+        xml += gardenTimeTable[channel][timeSlot].hStart;
+        xml += ":";
+        xml += gardenTimeTable[channel][timeSlot].mStart;
+        xml += "\" et=\"";
+        xml += gardenTimeTable[channel][timeSlot].hStop;
+        xml += ":";
+        xml += gardenTimeTable[channel][timeSlot].mStop;
+        xml += "\"/>";
 
         return xml;
 }
 
-void sendXmlConf() {        
-        for (int i = 0; i < RELAY_DEPTH; i++) {
-                String xml = getXmlChannelConf(i);
-                Serial.println(xml);
-                delay(200);
+void sendXmlConf() {
+        String xml = "";
+        for (byte i = 0; i < RELAY_DEPTH; i++) {
+                for (byte j = 0; j < TIMESLOT_MAP_MAXDEPTH; j += 2) {
+                        xml = getXmlTimeSlotConf(i, j);
+                        xml += getXmlTimeSlotConf(i, j + 1);
+                        Serial.println(xml);
+                }
         }
 }
 
-int parseTimeSlotXml(String xml) {
+char parseTimeSlotXml(String xml) {
         int sd, td;
+        String data;
 
+        /* sanity check */
+        sd = xml.indexOf("/>");
+        if (sd < 0)
+                return -1;
         /* channel info */
         sd = xml.indexOf("\"");
         if (sd < 0)
                 return -1;
-        int chInfo = (xml.substring(sd + 1, sd + 2).toInt() % RELAY_DEPTH);
+        byte chInfo = (xml.substring(sd + 1, sd + 2).toInt() % RELAY_DEPTH);
         /* index info */
         sd = xml.indexOf("\"", sd + 3);
         if (sd < 0)
                 return -1;
-        int indexInfo = (xml.substring(sd + 1, sd + 2).toInt() % TIMESLOT_MAP_MAXDEPTH);
+        byte indexInfo = (xml.substring(sd + 1, sd + 2).toInt() % TIMESLOT_MAP_MAXDEPTH);
         /* enable info */
         sd = xml.indexOf("\"", sd + 3);
         if (sd < 0)
                 return -1;
-        int enableInfo = xml.substring(sd + 1, sd + 2).toInt();
+        byte enableInfo = xml.substring(sd + 1, sd + 2).toInt();
         /* start_time info */
         sd = xml.indexOf("\"", sd + 3);
         if (sd < 0)
                 return -1;
-        String startInfo = xml.substring(sd + 1, sd + 6);
-        td = startInfo.indexOf(":");
+        data = xml.substring(sd + 1, sd + 6);
+        td = data.indexOf(":");
         if (td < 0)
                 return -1;
-        int hStart = startInfo.substring(0, td).toInt();
-        int mStart = startInfo.substring(td + 1).toInt();
+        byte hStart = data.substring(0, td).toInt();
+        byte mStart = data.substring(td + 1).toInt();
         /* stop_time info */
         sd = xml.indexOf("\"", sd + 7);
         if (sd < 0)
                 return -1;
-        String stopInfo = xml.substring(sd + 1, sd + 6);
-        td = startInfo.indexOf(":");
+        data = xml.substring(sd + 1, sd + 6);
+        td = data.indexOf(":");
         if (td < 0)
                 return -1;
-        int hStop = stopInfo.substring(0, td).toInt();
-        int mStop = stopInfo.substring(td + 1).toInt();
+        byte hStop = data.substring(0, td).toInt();
+        byte mStop = data.substring(td + 1).toInt();
 
         /* update timetable */
-        gadenTimeTable[chInfo][indexInfo].enabled = enableInfo;
-        gadenTimeTable[chInfo][indexInfo].hStart = hStart;
-        gadenTimeTable[chInfo][indexInfo].mStart = mStart;
-        gadenTimeTable[chInfo][indexInfo].hStop = hStop;
-        gadenTimeTable[chInfo][indexInfo].mStop = mStop;
+        gardenTimeTable[chInfo][indexInfo].enabled = enableInfo;
+        gardenTimeTable[chInfo][indexInfo].hStart = hStart;
+        gardenTimeTable[chInfo][indexInfo].mStart = mStart;
+        gardenTimeTable[chInfo][indexInfo].hStop = hStop;
+        gardenTimeTable[chInfo][indexInfo].mStop = mStop;
+
+        return 0;
 }
 
 int updateRtcTime(String xml) {
+        String data;
         int sd;
 
         sd = xml.indexOf("/>");
@@ -170,17 +219,17 @@ int updateRtcTime(String xml) {
         if (sd < 0)
                 return -1;
 
-        String currDate = xml.substring(sd + 1, sd + 11);
-        String currDay = currDate.substring(0, 2);
-        String currMonth = currDate.substring(3, 5);
-        String currYear = currDate.substring(6, 10);
+        data = xml.substring(sd + 1, sd + 11);
+        String currDay = data.substring(0, 2);
+        String currMonth = data.substring(3, 5);
+        String currYear = data.substring(6, 10);
 
         sd = xml.indexOf(" ", sd + 1);
         if (sd < 0)
                 return -1;
-        String currTime = xml.substring(sd + 1, sd + 6);
-        String currHour = currTime.substring(0, 2);
-        String currMin = currTime.substring(3, 5);
+        data = xml.substring(sd + 1, sd + 6);
+        String currHour = data.substring(0, 2);
+        String currMin = data.substring(3, 5);
 
         rtc.adjust(DateTime(currYear.toInt(), currMonth.toInt(), currDay.toInt(),
                             currHour.toInt(), currMin.toInt(), 0));
@@ -212,13 +261,14 @@ void parseRxBuffer(String data) {
                 while (i < data.length()) {
                     closeTag = data.indexOf("/>", i) + 2;
                     if (closeTag < 0)
-                        break;
+                        return;
 
-                    int err = parseTimeSlotXml(data.substring(i + 5, closeTag));
+                    int err = parseTimeSlotXml(data.substring(i, closeTag));
                     if (err < 0)
-                        break;
+                        return;
                     i = closeTag;
                 }
+                saveConfiguration();
         } else if (data.startsWith("<GET>")) {
                 sendXmlConf();
         } else if (data.startsWith("<TIME")) {
@@ -229,16 +279,18 @@ void parseRxBuffer(String data) {
 }
 
 void setRelay(int index, int hTime, int sTime) {
-        int val = LOW;
+        int currTime = hTime * 60 + sTime;
+        byte val = LOW;
 
-        for (int i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
-                if (!gadenTimeTable[index][i].enabled)
+        for (byte i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
+                if (!gardenTimeTable[index][i].enabled)
                         continue;
 
-                if (hTime >= gadenTimeTable[index][i].hStart &&
-                    sTime >= gadenTimeTable[index][i].mStart &&
-                    hTime <= gadenTimeTable[index][i].hStop &&
-                    sTime >= gadenTimeTable[index][i].mStop)
+                int startTime = 60 * gardenTimeTable[index][i].hStart +
+                                gardenTimeTable[index][i].mStart;
+                int stopTime = 60 * gardenTimeTable[index][i].hStop +
+                               gardenTimeTable[index][i].mStop;
+                if (currTime >= startTime && currTime <= stopTime)
                         val = HIGH;
         }
         if (val != relayValue[index]) {
@@ -248,7 +300,7 @@ void setRelay(int index, int hTime, int sTime) {
 }
 
 void loop() {
-        bool btLink = digitalRead(BT_LINK_PIN);
+        byte btLink = digitalRead(BT_LINK_PIN);
 
         if (!btLink && btConnected) {
                 delay(1000);
@@ -259,14 +311,12 @@ void loop() {
        if (btConnected) {
                 String data = Serial.readString();
                 parseRxBuffer(data);
-                Serial.println(data);
         }
 
         if (rtc.isrunning()) {
                 DateTime now = rtc.now();
-                for (int i = 0; i < RELAY_DEPTH; i++)
+                for (byte i = 0; i < RELAY_DEPTH; i++)
                         setRelay(i, now.hour(), now.minute());
         }
-
         delay(LOOP_DELAY);
 }
