@@ -105,6 +105,22 @@ void saveConfiguration() {
         }
 }
 
+void saveChannelLog(byte index, bool start) {
+        String fileName = "chan" + String(index) + ".log";
+        String data = getCurrTime() + ": ";
+        if (start) {
+                SD.remove(fileName);
+                data += " - ";
+        } else {
+                data += "stop";
+        }
+        File logFile = SD.open(fileName, FILE_WRITE);
+        if (logFile) {
+                logFile.print(data);
+                logFile.close();
+        }
+}
+
 void loadConfiguration() {
         File configFile = SD.open(CONFIG_FILE);
         if (configFile) {
@@ -120,6 +136,20 @@ void loadConfiguration() {
                 }
                 configFile.close();
         }
+}
+
+String loadChanLog(int index) {
+        String fileName = "chan" + String(index) + ".log";
+        String ret = "";
+        File logFile = SD.open(fileName);
+        if (logFile) {
+                while (logFile.available()) {
+                        char data = logFile.read();
+                        ret += String(data);
+                }
+                logFile.close(); 
+        }
+        return ret;
 }
 
 String getXmlTimeSlotConf(byte channel, byte timeSlot) {
@@ -142,14 +172,28 @@ String getXmlTimeSlotConf(byte channel, byte timeSlot) {
         return xml;
 }
 
-void sendXmlConf() {
+String getXmlChanLog(int index) {
+        String xml = "<log chan=\"";
+        xml += String(index);
+        xml += "\" log=\"";
+        xml += loadChanLog(index);
+        xml += "\"/>";
+
+        return xml;
+}
+
+void sendXml() {
         String xml = "";
         for (byte i = 0; i < RELAY_DEPTH; i++) {
                 for (byte j = 0; j < TIMESLOT_MAP_MAXDEPTH; j += 2) {
                         xml = getXmlTimeSlotConf(i, j);
                         xml += getXmlTimeSlotConf(i, j + 1);
                         Serial.println(xml);
+                        Serial.flush();
                 }
+                xml = getXmlChanLog(i);
+                Serial.println(xml);
+                Serial.flush();
         }
 }
 
@@ -248,8 +292,6 @@ String getCurrTime() {
         currTime += String(now.hour());
         currTime += ":";
         currTime += String(now.minute());
-        currTime += ":";
-        currTime += String(now.second());
 
         return currTime;
 }
@@ -270,11 +312,11 @@ void parseRxBuffer(String data) {
                 }
                 saveConfiguration();
         } else if (data.startsWith("<GET>")) {
-                sendXmlConf();
+                sendXml();
         } else if (data.startsWith("<TIME")) {
                 updateRtcTime(data);
                 delay(500);
-                sendXmlConf();
+                sendXml();
         }
 }
 
@@ -294,6 +336,10 @@ void setRelay(int index, int hTime, int sTime) {
                         val = HIGH;
         }
         if (val != relayValue[index]) {
+                saveChannelLog(index, (val == HIGH));
+                String xml = getXmlChanLog(index);
+                Serial.println(xml);
+                Serial.flush();
                 digitalWrite(relayMap[index], val);
                 relayValue[index] = val;
         }
