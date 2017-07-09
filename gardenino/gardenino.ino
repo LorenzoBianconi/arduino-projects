@@ -110,13 +110,13 @@ void saveChannelLog(byte index, bool start) {
         String data = getCurrTime() + ": ";
         if (start) {
                 SD.remove(fileName);
-                data += " - ";
+                data += " start - ";
         } else {
                 data += "stop";
         }
         File logFile = SD.open(fileName, FILE_WRITE);
         if (logFile) {
-                logFile.print(data);
+                logFile.println(data);
                 logFile.close();
         }
 }
@@ -145,6 +145,8 @@ String loadChanLog(int index) {
         if (logFile) {
                 while (logFile.available()) {
                         char data = logFile.read();
+                        if (data == '\r' || data == '\n')
+                                continue;
                         ret += String(data);
                 }
                 logFile.close(); 
@@ -336,10 +338,13 @@ void setRelay(int index, int hTime, int sTime) {
                         val = HIGH;
         }
         if (val != relayValue[index]) {
-                saveChannelLog(index, (val == HIGH));
-                String xml = getXmlChanLog(index);
-                Serial.println(xml);
-                Serial.flush();
+                bool start = (val == HIGH) ? true : false;
+                saveChannelLog(index, start);
+                if (btConnected) {
+                        String xml = getXmlChanLog(index);
+                        Serial.println(xml);
+                        Serial.flush();
+                }
                 digitalWrite(relayMap[index], val);
                 relayValue[index] = val;
         }
