@@ -26,6 +26,8 @@ static byte relayValue[] = { LOW, LOW, LOW, LOW };
 #define RELAY_DEPTH     4
 #define LOOP_DELAY      1000
 
+String logInfo[RELAY_DEPTH];
+
 struct timeSlot {
         byte enabled;
         byte hStart;
@@ -43,7 +45,7 @@ byte btConnected;
 
 /* SD stuff */
 const byte chipSelect = 10;
-#define CONFIG_FILE     "garden.xml"
+#define CONFIG_FILE     "GARDEN.XML"
 
 void sendBtCmd(char *cmd)
 {
@@ -79,10 +81,12 @@ void setup() {
         if (!rtc.isrunning()) {
                 rtc.adjust(DateTime(__DATE__, __TIME__));
         }
-
-        if (SD.begin(chipSelect))
+        if (SD.begin(chipSelect)) {
                 loadConfiguration();
-
+                /* load channel log */
+                for (byte i = 0; i < RELAY_DEPTH; i++)
+                        logInfo[i] = loadChanLog(i);
+        }
         /* init bt connection */
         btConnected = false;
         delay(1000);
@@ -106,18 +110,18 @@ void saveConfiguration() {
 }
 
 void saveChannelLog(byte index, bool start) {
-        String fileName = "chan" + String(index) + ".log";
-        String data = getCurrTime() + ": ";
         if (start) {
-                SD.remove(fileName);
-                data += " start - ";
+                logInfo[index] = (getCurrTime() + " - ");
         } else {
-                data += "stop";
-        }
-        File logFile = SD.open(fileName, FILE_WRITE);
-        if (logFile) {
-                logFile.println(data);
-                logFile.close();
+                logInfo[index] += getCurrTime();
+                /* save channel log to SD */
+                String fileName = "CHAN" + String(index) + ".LOG";
+                SD.remove(fileName);
+                File logFile = SD.open(fileName, FILE_WRITE);
+                if (logFile) {
+                        logFile.println(logInfo[index]);
+                        logFile.close();
+                }
         }
 }
 
@@ -139,7 +143,7 @@ void loadConfiguration() {
 }
 
 String loadChanLog(int index) {
-        String fileName = "chan" + String(index) + ".log";
+        String fileName = "CHAN" + String(index) + ".LOG";
         String ret = "";
         File logFile = SD.open(fileName);
         if (logFile) {
@@ -178,7 +182,7 @@ String getXmlChanLog(int index) {
         String xml = "<log chan=\"";
         xml += String(index);
         xml += "\" log=\"";
-        xml += loadChanLog(index);
+        xml += logInfo[index];
         xml += "\"/>";
 
         return xml;
@@ -285,12 +289,12 @@ String getCurrTime() {
         String currTime = "";
         DateTime now = rtc.now();
 
-        currTime += String(now.year());
+        /*currTime += String(now.year());
         currTime += "/";
         currTime += String(now.month());
         currTime += "/";
         currTime += String(now.day());
-        currTime += " ";
+        currTime += " ";*/
         currTime += String(now.hour());
         currTime += ":";
         currTime += String(now.minute());
