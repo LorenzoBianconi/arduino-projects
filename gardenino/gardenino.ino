@@ -22,11 +22,15 @@ RTC_DS1307 rtc;
  * D7: digital pin 7
  */
 const static byte relayMap[] = { 4, 5, 6, 7 };
-static byte relayValue[] = { LOW, LOW, LOW, LOW };
-#define RELAY_DEPTH     4
-#define LOOP_DELAY      1000
+enum chanState {
+        CHAN_CLOSED = 0,
+        CHAN_OPEN,
+};
+static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
+#define CHAN_DEPTH     2
+#define LOOP_DELAY     1000
 
-String logInfo[RELAY_DEPTH];
+String logInfo[CHAN_DEPTH];
 
 struct timeSlot {
         byte enabled;
@@ -37,7 +41,7 @@ struct timeSlot {
 };
 
 #define TIMESLOT_MAP_MAXDEPTH      4
-struct timeSlot gardenTimeTable[RELAY_DEPTH][TIMESLOT_MAP_MAXDEPTH] = {};
+struct timeSlot gardenTimeTable[CHAN_DEPTH][TIMESLOT_MAP_MAXDEPTH] = {};
 
 /* Bluetooth stuff */
 #define BT_LINK_PIN     A0
@@ -71,22 +75,25 @@ void setup() {
         Serial.begin(38400);
         Serial.setTimeout(500);
 
-        for (byte i = 0; i < RELAY_DEPTH; i++) {
+        /* setup initali values for relay channels */
+        for (byte i = 0; i < 2 * CHAN_DEPTH; i++) {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
         }
 
         Wire.begin();
         rtc.begin();
-        if (!rtc.isrunning()) {
+        if (!rtc.isrunning())
                 rtc.adjust(DateTime(__DATE__, __TIME__));
-        }
+
         if (SD.begin(chipSelect)) {
+                /* load channel configuration */
                 loadConfiguration();
                 /* load channel log */
-                for (byte i = 0; i < RELAY_DEPTH; i++)
+                for (byte i = 0; i < CHAN_DEPTH; i++)
                         logInfo[i] = loadChanLog(i);
         }
+
         /* init bt connection */
         btConnected = false;
         delay(1000);
@@ -99,7 +106,7 @@ void saveConfiguration() {
         File configFile = SD.open(CONFIG_FILE, FILE_WRITE);
         if (configFile) {
                 String xml;
-                for (byte i = 0; i < RELAY_DEPTH; i++) {
+                for (byte i = 0; i < CHAN_DEPTH; i++) {
                         for (byte j = 0; j < TIMESLOT_MAP_MAXDEPTH; j++) {
                                 xml = getXmlTimeSlotConf(i, j);
                                 configFile.println(xml);
@@ -143,8 +150,7 @@ void loadConfiguration() {
 }
 
 String loadChanLog(int index) {
-        String fileName = "CHAN" + String(index) + ".LOG";
-        String ret = "";
+        String ret = "", fileName = "CHAN" + String(index) + ".LOG";
         File logFile = SD.open(fileName);
         if (logFile) {
                 while (logFile.available()) {
@@ -190,7 +196,7 @@ String getXmlChanLog(int index) {
 
 void sendXml() {
         String xml = "";
-        for (byte i = 0; i < RELAY_DEPTH; i++) {
+        for (byte i = 0; i < CHAN_DEPTH; i++) {
                 for (byte j = 0; j < TIMESLOT_MAP_MAXDEPTH; j += 2) {
                         xml = getXmlTimeSlotConf(i, j);
                         xml += getXmlTimeSlotConf(i, j + 1);
@@ -215,7 +221,7 @@ char parseTimeSlotXml(String xml) {
         sd = xml.indexOf("\"");
         if (sd < 0)
                 return -1;
-        byte chInfo = (xml.substring(sd + 1, sd + 2).toInt() % RELAY_DEPTH);
+        byte chInfo = (xml.substring(sd + 1, sd + 2).toInt() % CHAN_DEPTH);
         /* index info */
         sd = xml.indexOf("\"", sd + 3);
         if (sd < 0)
@@ -302,18 +308,18 @@ String getCurrTime() {
         return currTime;
 }
 
-void parseRxBuffer(String data) {
+int parseRxBuffer(String data) {
         if (data.startsWith("<SET")) {
                 int i = 0, closeTag;
 
                 while (i < data.length()) {
                     closeTag = data.indexOf("/>", i) + 2;
                     if (closeTag < 0)
-                        return;
+                        return closeTag;
 
                     int err = parseTimeSlotXml(data.substring(i, closeTag));
                     if (err < 0)
-                        return;
+                        return err;
                     i = closeTag;
                 }
                 saveConfiguration();
@@ -324,11 +330,12 @@ void parseRxBuffer(String data) {
                 delay(500);
                 sendXml();
         }
+        return 0;
 }
 
 void setRelay(int index, int hTime, int sTime) {
+        enum chanState state = CHAN_CLOSED;
         int currTime = hTime * 60 + sTime;
-        byte val = LOW;
 
         for (byte i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
                 if (!gardenTimeTable[index][i].enabled)
@@ -339,18 +346,23 @@ void setRelay(int index, int hTime, int sTime) {
                 int stopTime = 60 * gardenTimeTable[index][i].hStop +
                                gardenTimeTable[index][i].mStop;
                 if (currTime >= startTime && currTime <= stopTime)
-                        val = HIGH;
+                        state = CHAN_OPEN;
         }
-        if (val != relayValue[index]) {
-                bool start = (val == HIGH) ? true : false;
-                saveChannelLog(index, start);
+        if (state != channelState[index]) {
+                int relay_idx = (state == CHAN_OPEN) ? index : index + 1;
+                digitalWrite(relayMap[relay_idx], 1);
+                delay(1000);
+                digitalWrite(relayMap[relay_idx], 0);
+                channelState[index] = state;
+
+                saveChannelLog(index, (state == CHAN_OPEN));
+
+                /* send event over bluetooth */
                 if (btConnected) {
                         String xml = getXmlChanLog(index);
                         Serial.println(xml);
                         Serial.flush();
                 }
-                digitalWrite(relayMap[index], val);
-                relayValue[index] = val;
         }
 }
 
@@ -370,7 +382,7 @@ void loop() {
 
         if (rtc.isrunning()) {
                 DateTime now = rtc.now();
-                for (byte i = 0; i < RELAY_DEPTH; i++)
+                for (byte i = 0; i < CHAN_DEPTH; i++)
                         setRelay(i, now.hour(), now.minute());
         }
         delay(LOOP_DELAY);
