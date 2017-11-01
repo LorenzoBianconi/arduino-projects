@@ -27,8 +27,9 @@ enum chanState {
         CHAN_OPEN,
 };
 static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
-#define CHAN_DEPTH     2
-#define LOOP_DELAY     1000
+#define CHAN_DEPTH      2
+#define LOOP_DELAY      1000
+#define PULSE_DEPTH     1500
 
 String logInfo[CHAN_DEPTH];
 
@@ -75,11 +76,14 @@ void setup() {
         Serial.begin(38400);
         Serial.setTimeout(500);
 
-        /* setup initali values for relay channels */
+        /* setup intial values for relay channels */
         for (byte i = 0; i < 2 * CHAN_DEPTH; i++) {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
         }
+        /* close valves at bootstrap */
+        for (byte i = 0; i < CHAN_DEPTH; i++)
+                relayPulse(relayMap[2 * i + 1]);
 
         Wire.begin();
         rtc.begin();
@@ -333,6 +337,12 @@ int parseRxBuffer(String data) {
         return 0;
 }
 
+void relayPulse(byte index) {
+        digitalWrite(index, HIGH);
+        delay(PULSE_DEPTH);
+        digitalWrite(index, LOW);
+}
+
 void setRelay(int index, int hTime, int sTime) {
         enum chanState state = CHAN_CLOSED;
         int currTime = hTime * 60 + sTime;
@@ -350,9 +360,7 @@ void setRelay(int index, int hTime, int sTime) {
         }
         if (state != channelState[index]) {
                 int relay_idx = (state == CHAN_OPEN) ? index : index + 1;
-                digitalWrite(relayMap[relay_idx], 1);
-                delay(1000);
-                digitalWrite(relayMap[relay_idx], 0);
+                relayPulse(relay_idx);
                 channelState[index] = state;
 
                 saveChannelLog(index, (state == CHAN_OPEN));
