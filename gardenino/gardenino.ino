@@ -22,11 +22,16 @@ RTC_DS1307 rtc;
  * D7: digital pin 7
  */
 const static byte relayMap[] = { 5, 4, 7, 6 };
+
 enum chanState {
         CHAN_CLOSED = 0,
         CHAN_OPEN,
 };
 static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
+/* pulse period 5 minutes */
+#define PULSE_PERIOD    300
+DateTime lastPulseTs(0);
+
 #define CHAN_DEPTH      2
 #define LOOP_DELAY      1000
 #define PULSE_DEPTH     1500
@@ -343,9 +348,9 @@ void relayPulse(byte index) {
         digitalWrite(index, LOW);
 }
 
-void setRelay(int index, int hTime, int sTime) {
+void setRelay(int index, DateTime now) {
+        int currTime = now.hour() * 60 + now.minute();
         enum chanState state = CHAN_CLOSED;
-        int currTime = hTime * 60 + sTime;
 
         for (byte i = 0; i < TIMESLOT_MAP_MAXDEPTH; i++) {
                 if (!gardenTimeTable[index][i].enabled)
@@ -355,21 +360,29 @@ void setRelay(int index, int hTime, int sTime) {
                                 gardenTimeTable[index][i].mStart;
                 int stopTime = 60 * gardenTimeTable[index][i].hStop +
                                gardenTimeTable[index][i].mStop;
-                if (currTime >= startTime && currTime <= stopTime)
+                if (currTime >= startTime && currTime <= stopTime) {
                         state = CHAN_OPEN;
+                        break;
+                }
         }
-        if (state != channelState[index]) {
+
+        bool sendPulse = (state != channelState[index]);
+        TimeSpan deltaTs = now - lastPulseTs;
+        if (sendPulse || deltaTs.totalseconds() >= PULSE_PERIOD) {
                 int relay_idx = (state == CHAN_OPEN) ? index : index + 1;
                 relayPulse(relay_idx);
+
                 channelState[index] = state;
+                lastPulseTs = now;
 
-                saveChannelLog(index, (state == CHAN_OPEN));
-
-                /* send event over bluetooth */
-                if (btConnected) {
-                        String xml = getXmlChanLog(index);
-                        Serial.println(xml);
-                        Serial.flush();
+                if (sendPulse) {
+                        saveChannelLog(index, (state == CHAN_OPEN));
+                        /* send event over bluetooth */
+                        if (btConnected) {
+                                String xml = getXmlChanLog(index);
+                                Serial.println(xml);
+                                Serial.flush();
+                        }
                 }
         }
 }
@@ -391,7 +404,7 @@ void loop() {
         if (rtc.isrunning()) {
                 DateTime now = rtc.now();
                 for (byte i = 0; i < CHAN_DEPTH; i++)
-                        setRelay(i, now.hour(), now.minute());
+                        setRelay(i, now);
         }
         delay(LOOP_DELAY);
 }
