@@ -21,7 +21,7 @@ RTC_DS1307 rtc;
  * D6: digital pin 6
  * D7: digital pin 7
  */
-const static byte relayMap[] = { 4, 5, 6, 7 };
+const static byte relayMap[] = { 5, 4, 7, 6 };
 enum chanState {
         CHAN_CLOSED = 0,
         CHAN_OPEN,
