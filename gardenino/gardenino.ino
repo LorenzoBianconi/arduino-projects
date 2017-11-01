@@ -76,7 +76,7 @@ void setup() {
         Serial.begin(38400);
         Serial.setTimeout(500);
 
-        /* setup intial values for relay channels */
+        /* setup initial values for relay channels */
         for (byte i = 0; i < 2 * CHAN_DEPTH; i++) {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
