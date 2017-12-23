@@ -369,13 +369,8 @@ void setRelay(int index, DateTime now) {
         bool sendPulse = (state != channelState[index]);
         TimeSpan deltaTs = now - lastPulseTs;
         if (sendPulse || deltaTs.totalseconds() >= PULSE_PERIOD) {
-                int relay_idx = (state == CHAN_OPEN) ? index : index + 1;
-                relayPulse(relay_idx);
-
-                channelState[index] = state;
-                lastPulseTs = now;
-
                 if (sendPulse) {
+                        channelState[index] = state;
                         saveChannelLog(index, (state == CHAN_OPEN));
                         /* send event over bluetooth */
                         if (btConnected) {
@@ -384,6 +379,11 @@ void setRelay(int index, DateTime now) {
                                 Serial.flush();
                         }
                 }
+
+                int relay_idx = (channelState[index] == CHAN_OPEN) ? index : index + 1;
+                relayPulse(relay_idx);
+
+                lastPulseTs = now;
         }
 }
 
