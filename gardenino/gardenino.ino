@@ -28,13 +28,13 @@ enum chanState {
         CHAN_OPEN,
 };
 static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
-/* pulse period 5 minutes */
-#define PULSE_PERIOD    300
+/* pulse period 20 minutes */
+#define PULSE_PERIOD    1200
 DateTime lastPulseTs(0);
 
 #define CHAN_DEPTH      2
 #define LOOP_DELAY      1000
-#define PULSE_DEPTH     1500
+#define PULSE_DEPTH     2000
 
 String logInfo[CHAN_DEPTH];
 
@@ -86,9 +86,6 @@ void setup() {
              pinMode(relayMap[i], OUTPUT);
              digitalWrite(relayMap[i], LOW);   
         }
-        /* close valves at bootstrap */
-        for (byte i = 0; i < CHAN_DEPTH; i++)
-                relayPulse(relayMap[2 * i + 1]);
 
         Wire.begin();
         rtc.begin();
@@ -102,6 +99,12 @@ void setup() {
                 for (byte i = 0; i < CHAN_DEPTH; i++)
                         logInfo[i] = loadChanLog(i);
         }
+
+        delay(1000);
+        /* close valves at bootstrap */
+        for (byte i = 0; i < CHAN_DEPTH; i++)
+                relayPulse(i, CHAN_CLOSED);
+        lastPulseTs = rtc.now();
 
         /* init bt connection */
         btConnected = false;
@@ -342,10 +345,13 @@ int parseRxBuffer(String data) {
         return 0;
 }
 
-void relayPulse(byte index) {
-        digitalWrite(index, HIGH);
+void relayPulse(byte chan_index, enum chanState state) {
+        int index = (state == CHAN_OPEN) ? 2 * chan_index : 2 * chan_index + 1;
+
+        digitalWrite(relayMap[index], HIGH);
         delay(PULSE_DEPTH);
-        digitalWrite(index, LOW);
+        digitalWrite(relayMap[index], LOW);
+        delay(1000);
 }
 
 void setRelay(int index, DateTime now) {
@@ -379,10 +385,7 @@ void setRelay(int index, DateTime now) {
                                 Serial.flush();
                         }
                 }
-
-                int relay_idx = (channelState[index] == CHAN_OPEN) ? index : index + 1;
-                relayPulse(relay_idx);
-
+                relayPulse(index, channelState[index]);
                 lastPulseTs = now;
         }
 }
