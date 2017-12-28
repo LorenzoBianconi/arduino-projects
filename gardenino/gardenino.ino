@@ -215,8 +215,7 @@ void sendXml() {
                         Serial.println(xml);
                         Serial.flush();
                 }
-                xml = getXmlChanLog(i);
-                Serial.println(xml);
+                Serial.println(getXmlChanLog(i));
                 Serial.flush();
         }
 }
