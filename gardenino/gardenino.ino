@@ -27,14 +27,15 @@ enum chanState {
         CHAN_CLOSED = 0,
         CHAN_OPEN,
 };
-static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
-/* pulse period 20 minutes */
-#define PULSE_PERIOD    1200
-DateTime lastPulseTs(0);
 
 #define CHAN_DEPTH      2
 #define LOOP_DELAY      1000
 #define PULSE_DEPTH     2000
+
+static enum chanState channelState[] = { CHAN_CLOSED, CHAN_CLOSED };
+/* pulse period 20 minutes */
+#define PULSE_PERIOD    1200
+DateTime lastPulseTs[CHAN_DEPTH];
 
 String logInfo[CHAN_DEPTH];
 
@@ -87,10 +88,13 @@ void setup() {
              digitalWrite(relayMap[i], LOW);   
         }
 
-        Wire.begin();
+        delay(1000);
+
         rtc.begin();
         if (!rtc.isrunning())
                 rtc.adjust(DateTime(__DATE__, __TIME__));
+
+        delay(1000);
 
         if (SD.begin(chipSelect)) {
                 /* load channel configuration */
@@ -101,15 +105,20 @@ void setup() {
         }
 
         delay(1000);
-        /* close valves at bootstrap */
-        for (byte i = 0; i < CHAN_DEPTH; i++)
-                relayPulse(i, CHAN_CLOSED);
-        lastPulseTs = rtc.now();
 
         /* init bt connection */
         btConnected = false;
-        delay(1000);
         resetBtLink();
+
+        delay(1000);
+
+        /* close valves at bootstrap */
+        for (byte i = 0; i < CHAN_DEPTH; i++) {
+                relayPulse(i, CHAN_CLOSED);
+                lastPulseTs[i] = rtc.now();
+        }
+
+        delay(1000);
 }
 
 
@@ -372,7 +381,7 @@ void setRelay(int index, DateTime now) {
         }
 
         bool sendPulse = (state != channelState[index]);
-        TimeSpan deltaTs = now - lastPulseTs;
+        TimeSpan deltaTs = now - lastPulseTs[index];
         if (sendPulse || deltaTs.totalseconds() >= PULSE_PERIOD) {
                 if (sendPulse) {
                         channelState[index] = state;
@@ -385,7 +394,7 @@ void setRelay(int index, DateTime now) {
                         }
                 }
                 relayPulse(index, channelState[index]);
-                lastPulseTs = now;
+                lastPulseTs[index] = now;
         }
 }
 
